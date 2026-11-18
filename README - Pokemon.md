@@ -10,8 +10,11 @@ con sprites dibujados sobre los gráficos.
 > gráfico se genera bajo demanda con los botones **Generar / Guardar / Borrar**.
 ---
 ## Setup
+```
 source("setup.R")
 shiny::runApp()
+```
+
 ---
 
 ## Estructura
