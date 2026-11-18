@@ -8,7 +8,10 @@ con sprites dibujados sobre los gráficos.
 > **Versión v7.** Cambios respecto a `app_v6.R`: todo se lee desde `data/`,
 > los sprites se cargan con una caché propia (sin `ggimage`/`magick`) y cada
 > gráfico se genera bajo demanda con los botones **Generar / Guardar / Borrar**.
-
+---
+## Setup
+source("setup.R")
+shiny::runApp()
 ---
 
 ## Estructura
