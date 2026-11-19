@@ -1,9 +1,9 @@
 # Pokémon · Análisis interactivo (Shiny)
 
-Aplicación Shiny para explorar el dataset de Pokémon de
-[TidyTuesday 2025-04-01](https://github.com/rfordatascience/tidytuesday/tree/main/data/2025/2025-04-01):
-distribuciones, relaciones, PCA/UMAP, outliers multivariantes, heatmap y radar,
-con sprites dibujados sobre los gráficos.
+Aplicación Shiny para explorar el dataset de Pokémon de https://github.com/rfordatascience/tidytuesday/tree/main/data/2025/2025-04-01:
+distribuciones, relaciones, PCA/UMAP, outliers multivariantes, heatmap y radar.
+
+Con sprites dibujados sobre los gráficos. https://github.com/PokeAPI
 
 > **Versión v8.** Cambios respecto a v7: los tres botones tienen ahora un
 > significado distinto. **Generar** crea un gráfico *temporal* que se mantiene
