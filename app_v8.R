@@ -1,4 +1,4 @@
-# app.R  (v7)
+# app.R  (v8)
 # Aplicación Shiny: análisis interactivo de Pokémon (TidyTuesday 2025-04-01)
 #
 # TODO se lee desde la carpeta data/ (la prepara download.R):
@@ -9,11 +9,13 @@
 #
 # Instalar una sola vez, si es necesario:
 # install.packages(c("shiny", "tidyverse", "ggbeeswarm", "DT", "scales",
-#                    "ggtext", "png", "uwot", "ragg"))
+#                    "ggtext", "png", "uwot", "ragg", "svglite"))
 # - png:    decodifica los sprites (sustituye a ggimage/magick)
 # - ggtext: dibuja los iconos de tipo en ejes y leyendas
 # - uwot:   solo para la pestaña UMAP
 # - ragg:   recomendado para que los emojis de las etiquetas se vean bien
+#           y para guardar los .png
+# - svglite: guarda los .svg (si falta, se usa grDevices::svg, que necesita cairo)
 
 library(shiny)
 library(tidyverse)
@@ -835,10 +837,21 @@ grafico_boxplot_individual <- function(datos, variable, opc = opciones_defecto) 
 # -------------------------------------------------------------------
 # 2b. Gráficos "bajo demanda": receta de cada pestaña y barra de botones
 # -------------------------------------------------------------------
-# Cada pestaña tiene tres botones: Generar / Guardar / Borrar. Lo que se
-# guarda NO es la imagen ni el objeto ggplot, solo los valores de los filtros
-# en el momento de pulsar «Generar» (unos pocos bytes). El gráfico se vuelve
-# a dibujar a partir de esa receta, y los sprites salen de la caché.
+# Cada pestaña tiene tres botones:
+#   Generar -> crea el gráfico TEMPORAL (sustituye al anterior). Se mantiene al
+#              cambiar de pestaña hasta que se pulse Borrar (o Generar de nuevo).
+#   Guardar -> escribe el gráfico temporal en outputs/ como .png y .svg.
+#   Borrar  -> elimina el gráfico temporal (no toca los archivos ya guardados).
+# El gráfico temporal NO es la imagen ni el objeto ggplot, solo los valores de
+# los filtros en el momento de pulsar «Generar» (unos pocos bytes). Se vuelve a
+# dibujar a partir de esa receta, y los sprites salen de la caché.
+
+# Carpeta y formato de los archivos que crea «Guardar»
+CARPETA_SALIDA    <- "outputs"
+GUARDADO_ANCHO    <- 12    # pulgadas
+GUARDADO_ALTO     <- 8     # pulgadas
+GUARDADO_ALTO_ID  <- c(heatmap = 10)   # alto propio de algunas pestañas
+GUARDADO_RES      <- 150   # ppp del .png
 
 entradas_graficos <- list(
   box_tipo       = c("tipos_tipo", "vars_tipo", "gens_ataque"),
@@ -957,6 +970,47 @@ dibujos <- list(
   }
 )
 
+# Abre el dispositivo gráfico de un formato (png con ragg, svg con svglite)
+abrir_dispositivo <- function(ext, archivo, ancho, alto) {
+  if (ext == "png") {
+    if (requireNamespace("ragg", quietly = TRUE)) {
+      ragg::agg_png(archivo, width = ancho, height = alto, units = "in", res = GUARDADO_RES)
+    } else {
+      png(archivo, width = ancho, height = alto, units = "in", res = GUARDADO_RES, type = "cairo")
+    }
+  } else {
+    if (requireNamespace("svglite", quietly = TRUE)) {
+      svglite::svglite(archivo, width = ancho, height = alto)
+    } else {
+      svg(archivo, width = ancho, height = alto)
+    }
+  }
+}
+
+# Dibuja el gráfico temporal `id` (receta `p`) en outputs/<id>_<fecha>.png y .svg.
+# Devuelve list(ok = TRUE/FALSE, archivos = rutas, error = mensaje).
+guardar_grafico <- function(id, p, opc, dibujar) {
+  dir.create(CARPETA_SALIDA, showWarnings = FALSE, recursive = TRUE)
+  base <- sprintf("%s_%s", id, format(Sys.time(), "%Y%m%d_%H%M%S"))
+  archivos <- file.path(CARPETA_SALIDA, paste0(base, c(".png", ".svg")))
+  ancho <- GUARDADO_ANCHO
+  alto  <- if (id %in% names(GUARDADO_ALTO_ID)) GUARDADO_ALTO_ID[[id]] else GUARDADO_ALTO
+  
+  tryCatch({
+    for (f in archivos) {
+      abrir_dispositivo(tools::file_ext(f), f, ancho, alto)
+      tryCatch({
+        r <- dibujar(p, opc)                 # el heatmap (R base) dibuja directamente
+        if (inherits(r, "ggplot")) print(r)
+      }, finally = dev.off())
+    }
+    list(ok = TRUE, archivos = archivos, error = NULL)
+  }, error = function(e) {
+    unlink(archivos)                         # no dejar archivos a medias
+    list(ok = FALSE, archivos = character(0), error = conditionMessage(e))
+  })
+}
+
 css_barra <- "
 .barra-grafico { display: flex; gap: 6px; margin-bottom: 8px; }
 .barra-grafico .btn { flex: 1; padding-left: 4px; padding-right: 4px; }
@@ -968,9 +1022,12 @@ barra_grafico <- function(id) {
   tagList(
     div(
       class = "barra-grafico",
-      actionButton(paste0(id, "_gen"),  "Generar", icon = icon("play"),  class = "btn-primary btn-sm"),
-      actionButton(paste0(id, "_save"), "Guardar", icon = icon("save"),  class = "btn-success btn-sm"),
-      actionButton(paste0(id, "_del"),  "Borrar",  icon = icon("trash"), class = "btn-danger btn-sm")
+      actionButton(paste0(id, "_gen"),  "Generar", icon = icon("play"),  class = "btn-primary btn-sm",
+                   title = "Genera el gráfico temporal (se mantiene hasta que lo borres)"),
+      actionButton(paste0(id, "_save"), "Guardar", icon = icon("save"),  class = "btn-success btn-sm",
+                   title = "Guarda el gráfico como .png y .svg en la carpeta outputs/"),
+      actionButton(paste0(id, "_del"),  "Borrar",  icon = icon("trash"), class = "btn-danger btn-sm",
+                   title = "Borra el gráfico temporal (no borra los archivos guardados)")
     ),
     div(class = "estado-grafico", uiOutput(paste0(id, "_estado"))),
     tags$hr()
@@ -1422,50 +1479,65 @@ server <- function(input, output, session) {
   })
   
   # ---- Gráficos bajo demanda: Generar / Guardar / Borrar ----
-  # estado[[id]] = NULL (no hay gráfico) o list(p = filtros, guardado = TRUE/FALSE)
+  # estado[[id]]          = NULL (no hay gráfico) o list(p = filtros): gráfico TEMPORAL.
+  #                         Se mantiene al cambiar de pestaña hasta Borrar / Generar.
+  # ultimo_guardado[[id]] = nombre del último archivo escrito en outputs/ (solo informativo;
+  #                         está separado para que guardar NO redibuje el gráfico).
   estado <- reactiveValues()
+  ultimo_guardado <- reactiveValues()
   
   registrar_grafico <- function(id) {
     force(id)
     entradas <- entradas_graficos[[id]]
     dibujar  <- dibujos[[id]]
     
-    # Generar: sustituye siempre al gráfico anterior (guardado o no)
+    # Generar: crea el gráfico temporal y sustituye al anterior
     observeEvent(input[[paste0(id, "_gen")]], {
-      previo <- estado[[id]]
-      p <- lapply(setNames(entradas, entradas), function(i) input[[i]])
-      estado[[id]] <- list(p = p, guardado = FALSE)
-      if (!is.null(previo) && isTRUE(previo$guardado)) {
-        showNotification("Se ha sustituido el gráfico guardado.", type = "message", duration = 3)
-      }
+      estado[[id]] <- list(p = lapply(setNames(entradas, entradas), function(i) input[[i]]))
     })
     
-    # Guardar: el gráfico sobrevive al cambiar de pestaña
+    # Guardar: escribe el gráfico temporal en outputs/ (.png y .svg)
     observeEvent(input[[paste0(id, "_save")]], {
       e <- estado[[id]]
       if (is.null(e)) {
         showNotification("No hay ningún gráfico que guardar: pulsa «Generar».", type = "warning")
       } else {
-        e$guardado <- TRUE
-        estado[[id]] <- e
+        res <- withProgress(
+          message = "Guardando .png y .svg...", value = 0.5,
+          guardar_grafico(id, e$p, opc(), dibujar)
+        )
+        if (isTRUE(res$ok)) {
+          ultimo_guardado[[id]] <- sub("\\.png$", "", basename(res$archivos[1]))
+          showNotification(
+            paste0("Guardado en ", CARPETA_SALIDA, "/: ", paste(basename(res$archivos), collapse = " y ")),
+            type = "message", duration = 6
+          )
+        } else {
+          showNotification(paste("No se pudo guardar el gráfico:", res$error),
+                           type = "error", duration = 10)
+        }
       }
     })
     
-    # Borrar: libera el gráfico (guardado o no)
+    # Borrar: elimina el gráfico temporal (los archivos de outputs/ no se tocan)
     observeEvent(input[[paste0(id, "_del")]], {
       estado[[id]] <- NULL
+      ultimo_guardado[[id]] <- NULL
     })
     
     output[[paste0(id, "_estado")]] <- renderUI({
       e <- estado[[id]]
-      if (is.null(e)) {
-        span(class = "text-muted", "Sin gráfico")
-      } else if (isTRUE(e$guardado)) {
-        span(class = "text-success", icon("check"), " Guardado: se conserva al cambiar de pestaña")
-      } else {
-        span(class = "text-warning", icon("exclamation-circle"),
-             " Sin guardar: se descarta al salir de la pestaña")
-      }
+      if (is.null(e)) return(span(class = "text-muted", "Sin gráfico"))
+      g <- ultimo_guardado[[id]]
+      tagList(
+        span(class = "text-success", icon("check"),
+             " Gráfico temporal: se mantiene hasta que pulses Borrar"),
+        if (!is.null(g)) tagList(
+          br(),
+          span(class = "text-muted", icon("file-image"),
+               paste0(" Último guardado: ", CARPETA_SALIDA, "/", g, " (.png / .svg)"))
+        )
+      )
     })
     
     output[[id]] <- renderPlot({
@@ -1477,14 +1549,6 @@ server <- function(input, output, session) {
   }
   
   for (id in names(dibujos)) registrar_grafico(id)
-  
-  # Al salir de una pestaña se descartan sus gráficos NO guardados
-  observeEvent(input$nav, {
-    for (id in names(dibujos)) {
-      e <- estado[[id]]
-      if (id != input$nav && !is.null(e) && !isTRUE(e$guardado)) estado[[id]] <- NULL
-    }
-  }, ignoreInit = TRUE)
   
   # ---- Regla: varios parámetros solo si hay un único tipo seleccionado ----
   # Si se rompe, se recorta la selección que el usuario NO acaba de tocar
