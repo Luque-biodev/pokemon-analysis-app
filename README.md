@@ -102,79 +102,6 @@ Reglas:
 - El estado temporal es **por sesión**: cada usuario tiene sus propios gráficos.
 - La pestaña **Exploración** (tablas) no usa los botones.
 
-## Análisis estadístico y gráficos: qué hace cada pestaña
-
-Convenciones comunes a toda la app:
-
-- **Estadísticas de combate** (`stats_pca`): HP, Attack, Defense, Sp. Atk,
-  Sp. Def y Speed. Son la base del PCA, el UMAP y la distancia de Mahalanobis.
-- **Variables numéricas**: todas las columnas numéricas del CSV salvo los
-  identificadores (`id`, `species_id`, `generation_id`). Las que aparecen en
-  los selectores de variable.
-- **Criterio de valor atípico (outlier)**: regla de Tukey, es decir, fuera de
-  `[Q1 − 1,5·IQR, Q3 + 1,5·IQR]`. Se calcula por grupo (por tipo, o por
-  parámetro) y los atípicos se dibujan con su sprite sobre un punto del color
-  del tipo.
-- **Colores e iconos**: el color es siempre el **tipo principal** (`type_1`);
-  los ejes y leyendas usan los iconos de `data/tipos/`.
-- **Filtros**: se aplican al pulsar *Generar* (ver la sección de botones). El
-  filtro «Generaciones» solo reduce las filas que se dibujan; no recalcula
-  nada (ver el aviso del PCA y la distancia de Mahalanobis).
-
-### Exploración (tablas)
-
-Resumen de los datos, con filtro por generación: número de Pokémon, de tipos
-y de generaciones; las 10 primeras observaciones; estadísticos descriptivos de
-cada variable numérica (media, desviación típica, mínimo, mediana y máximo) y
-la cuenta de **valores perdidos** del conjunto original, antes de excluir
-filas incompletas. No usa los botones.
-
-### Distribuciones
-
-| Pestaña | Qué representa | Detalles estadísticos |
-|---------|----------------|-----------------------|
-| **Ataque por tipo** (boxplot) | Caja y bigotes de uno o varios parámetros, por tipo. | Outliers de Tukey por grupo, dibujados con sprite. Filtro por generaciones. |
-| **Violin plot** | Densidad de cada grupo más todas las observaciones como sprites. | `scale = "width"` (todos los violines con el mismo ancho máximo, así se compara la forma y no el tamaño de la muestra) y `trim = FALSE` (la densidad se extiende más allá del rango observado). Los sprites se reparten con `ggbeeswarm::position_quasirandom`, sin solaparse. |
-| **Raincloud** | Medio violín (densidad) + boxplot + observaciones. | Densidad por tipo con 128 puntos, normalizada a máximo 1. Un tipo con una sola observación o con todos los valores iguales no muestra densidad. Sprites solo en los outliers de cada tipo. Admite cualquier variable numérica. |
-| **ECDF** | Función de distribución acumulada empírica por tipo. | No depende del número de *bins* ni del ancho de banda. Opcionalmente añade en negro discontinuo la curva de **todos** los Pokémon como referencia: una curva a la derecha de la de referencia indica valores más altos que la media global. |
-| **Boxplots individuales** | Una variable numérica para todos los Pokémon. | Un único boxplot con los outliers de Tukey como sprites. Filtro por generaciones. |
-
-**Regla tipos/parámetros** (boxplot y violín). Con **varios tipos** solo se
-representa **un parámetro** (el eje X son los tipos). Con **un tipo** puedes
-comparar **varios parámetros** (el eje X son los parámetros). Si rompes la
-regla, la app recorta la selección que no acabas de tocar y avisa.
-
-### Relaciones
-
-| Pestaña | Qué representa | Detalles estadísticos |
-|---------|----------------|-----------------------|
-| **Explorador** | Diagrama de dispersión de cualquier par de variables. | X e Y pueden ser variables numéricas, `PC1–PC3` o `mahalanobis`. Opcionales: tamaño del punto según otra variable, facetas por tipo o por generación, sprites y recta de regresión lineal (`lm`, sin banda de confianza). Arrastrando sobre el gráfico (*brush*) la tabla inferior muestra las filas seleccionadas. |
-| **Correlación** | Matriz de correlaciones (mapa de calor). | Correlación de **Pearson** con `pairwise.complete.obs`, escala de −1 a 1. Opción de ordenar variables por **clustering jerárquico** sobre `1 − r` (variables correlacionadas quedan juntas). Las variables constantes se descartan y se necesitan al menos dos. Usa todos los Pokémon. |
-| **Coord. paralelas** | Una línea por Pokémon que cruza las variables. | Cada variable se reescala a **0–1** (mínimo–máximo) dentro de los tipos elegidos, para poder compararlas aunque tengan unidades distintas. Se puede resaltar un Pokémon concreto en negro. |
-
-### Reducción dimensional y outliers multivariantes
-
-| Pestaña | Qué representa | Detalles estadísticos |
-|---------|----------------|-----------------------|
-| **PCA** | Plano de dos componentes principales (PC1, PC2, PC3 a elegir). | `prcomp` sobre las 6 estadísticas, **centradas y estandarizadas**. Se calcula **una sola vez con todos los Pokémon**; filtrar por generación solo oculta puntos, no recalcula los componentes. El *biplot* añade flechas con las cargas de cada variable. La tabla inferior da la **varianza explicada** y acumulada por componente. |
-| **PCA por tipo** | El mismo PCA, pero solo con los Pokémon de un tipo. | Incluye los Pokémon cuyo `type_1` **o** `type_2` sea el tipo elegido. Usa los componentes globales (no recalcula), por lo que se ve dónde cae ese tipo en el mapa general. El título indica cuántos hay. |
-| **UMAP** | Proyección no lineal de las 6 estadísticas. | `uwot::umap` sobre las estadísticas estandarizadas, con `n_neighbors = 15`, `min_dist = 0.3` y semilla fija (42, reproducible). Se calcula al arrancar. Sirve para ver **grupos de Pokémon parecidos**; las distancias entre grupos y los ejes **no son interpretables** como en el PCA. Requiere el paquete `uwot`. |
-| **Outliers multivariantes** | Pokémon atípicos en conjunto, sobre el plano PC1–PC2. | **Distancia de Mahalanobis al cuadrado** sobre las 6 estadísticas, con la media y la covarianza de todos los Pokémon; tiene en cuenta las correlaciones entre estadísticas. Con sprite: los que superan el cuantil de una **χ² con 6 gl** al nivel `p` elegido (0,05; 0,01; 0,001; 0,0001). Ese corte supone normalidad multivariante, que los datos no cumplen exactamente, por lo que es **orientativo**. La tabla da los 15 más atípicos. |
-
-### Perfiles
-
-| Pestaña | Qué representa | Detalles estadísticos |
-|---------|----------------|-----------------------|
-| **Heatmap** | Mapa de calor de Pokémon × variables. | Cada variable se estandariza (**z-score**); filas y columnas se agrupan con **clustering jerárquico** de `heatmap()` (distancia euclídea, enlace completo). La barra lateral coloreada indica el tipo. Si hay más Pokémon que el máximo elegido (30–600) se toma una **muestra aleatoria reproducible**; los nombres de fila solo se muestran con 60 filas o menos. Es un gráfico de R base. |
-| **Radar** | Perfil de hasta 5 Pokémon en las 6 estadísticas. | Todos los radares comparten la misma escala, de 0 al máximo global de las estadísticas, así que son comparables entre sí. Color según el tipo y trazo distinto por Pokémon. Conviene recordar que el **área** de un radar depende del orden de los ejes: es mejor leerlo eje a eje. |
-
-### Opciones globales
-
-La pestaña **Opciones** cambia el tamaño de la fuente (con opción de aplicarlo
-también a la interfaz), la escala de los sprites y la carpeta de la que se
-cargan (`sprites` o `sprites_mini`). Se aplican en vivo al gráfico temporal y
-a los archivos que se guarden después. No cambian ningún cálculo estadístico.
-
 ## Cómo se ahorra memoria y cómputo con los sprites
 
 `ggimage::geom_image()` abre y decodifica cada PNG con `magick` **en cada
@@ -225,3 +152,6 @@ los `input` y `output` de la interfaz coinciden con los de la lógica), pero
 - Que *Guardar* cree `outputs/*.png` y `outputs/*.svg` en todas las pestañas
   (el heatmap usa gráficos de R base) y que los sprites y los emojis se vean
   bien en ambos formatos.
+- Que *Generar → cambiar de pestaña → volver* conserve el gráfico hasta pulsar
+  *Borrar*.
+- Que la pestaña **Explorador** con *brush* rellene la tabla tras *Generar*.
