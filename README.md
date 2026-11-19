@@ -127,31 +127,3 @@ Ajustes disponibles al principio de `app.R`:
 | `CACHE_SPRITES_MAX` | Máximo de sprites en memoria. Bájalo si el servidor tiene poca RAM. |
 | `FACTOR_TAM` | Calibra el tamaño de los sprites respecto a v6 (que dependía del ancho del panel; ahora depende del lado menor). |
 
-## Publicar en shinyapps.io
-
-```r
-rsconnect::deployApp(appDir = ".", appName = "mi-pokedex")
-```
-
-La carpeta `data/` se sube con la app. Comprueba que `png` y `svglite` figuran
-entre las dependencias detectadas (o usa `renv::snapshot()`). En shinyapps.io
-el disco es temporal: los archivos de `outputs/` se pierden al reiniciar la
-instancia y quedan en el servidor, no en tu equipo; para conservarlos, ejecuta
-la app en local. Cuanto más pequeña sea
-`data/`, más rápido el despliegue: puedes borrar `data/sprites/` si solo usas
-`sprites_mini`.
-
-## Estado de la verificación
-
-Los scripts se revisaron de forma estática (delimitadores equilibrados, todos
-los `input` y `output` de la interfaz coinciden con los de la lógica), pero
-**no se han podido ejecutar en R**. Primera comprobación recomendada:
-
-- Que los sprites tengan un tamaño parecido al de v6; si no, ajusta `FACTOR_TAM`.
-- Que el icono de *Guardar* (`icon("save")`) se muestre en tu versión de Shiny.
-- Que *Guardar* cree `outputs/*.png` y `outputs/*.svg` en todas las pestañas
-  (el heatmap usa gráficos de R base) y que los sprites y los emojis se vean
-  bien en ambos formatos.
-- Que *Generar → cambiar de pestaña → volver* conserve el gráfico hasta pulsar
-  *Borrar*.
-- Que la pestaña **Explorador** con *brush* rellene la tabla tras *Generar*.
